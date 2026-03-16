@@ -86,12 +86,18 @@ def get_cpu_info():
         prev_cpu[i] = (total, idle)
     cpu_freqs = {}
     for i in range(core_count):
-        try:
-            with open(f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_cur_freq", "r") as f:
-                freq_str = f.read().strip()
-            freq = int(freq_str) // 1000
-        except Exception:
-            freq = 0
+        freq = None
+        for freq_path in [
+            f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_cur_freq",
+            f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_cur_freq",
+        ]:
+            try:
+                with open(freq_path, "r") as f:
+                    freq_str = f.read().strip()
+                freq = int(freq_str) // 1000
+                break
+            except Exception:
+                continue
         cpu_freqs[i] = freq
     return cpu_loads, cpu_freqs
 
@@ -214,10 +220,11 @@ def get_ram_swap_info():
     return ram_used, ram_total, swap_used, swap_total
 
 def get_temperatures():
+    temp_items = []
+    # Try lm-sensors first
     try:
         output = subprocess.check_output("sensors", shell=True, stderr=subprocess.DEVNULL).decode("utf-8")
         lines = output.splitlines()
-        temp_items = []
         current_name = None
         for line in lines:
             if ":" not in line and len(line.split()) == 1:
@@ -244,9 +251,35 @@ def get_temperatures():
                     temp_items.append((attr, formatted))
                 else:
                     temp_items.append(("default", line))
-        if not temp_items:
-            temp_items = [("default", "No temperature data.")]
     except Exception:
+        pass
+    # Fallback: read from /sys/class/thermal/
+    if not temp_items:
+        try:
+            thermal_base = "/sys/class/thermal"
+            for entry in sorted(os.listdir(thermal_base)):
+                if not entry.startswith("thermal_zone"):
+                    continue
+                zone_path = os.path.join(thermal_base, entry)
+                try:
+                    with open(os.path.join(zone_path, "type"), "r") as f:
+                        zone_type = f.read().strip()
+                    with open(os.path.join(zone_path, "temp"), "r") as f:
+                        temp_raw = int(f.read().strip())
+                    temp_val = temp_raw // 1000
+                    if temp_val >= 70:
+                        attr = 'temp_red'
+                    elif temp_val >= 60:
+                        attr = 'temp_yellow'
+                    else:
+                        attr = 'temp_green'
+                    formatted = f"{zone_type:<30} {temp_val:2d}°C"
+                    temp_items.append((attr, formatted))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    if not temp_items:
         temp_items = [("default", "No temperature data.")]
     return temp_items
 
@@ -539,18 +572,21 @@ def build_dashboard():
         if i + 1 < len(cores):
             attr1 = 'temp_red' if cpu_loads[cores[i]] >= 80 else ('temp_yellow' if cpu_loads[cores[i]] >= 60 else 'default')
             attr2 = 'temp_red' if cpu_loads[cores[i+1]] >= 80 else ('temp_yellow' if cpu_loads[cores[i+1]] >= 60 else 'default')
+            freq0 = f"{cpu_freqs[cores[i]]:4d} MHz" if cpu_freqs[cores[i]] is not None else ""
+            freq1 = f"{cpu_freqs[cores[i+1]]:4d} MHz" if cpu_freqs[cores[i+1]] is not None else ""
             markup = [
                 ("default", f"Core {cores[i]}: "), (attr1, f"{cpu_loads[cores[i]]:3d}%"), ("default", " "),
-                ("freq", f"{cpu_freqs[cores[i]]:4d} MHz   "),
+                ("freq", f"{freq0}   "),
                 ("default", f"Core {cores[i+1]}: "), (attr2, f"{cpu_loads[cores[i+1]]:3d}%"), ("default", " "),
-                ("freq", f"{cpu_freqs[cores[i+1]]:4d} MHz")
+                ("freq", f"{freq1}")
             ]
             lines.append(markup)
         else:
             attr1 = 'temp_red' if cpu_loads[cores[i]] >= 70 else ('temp_yellow' if cpu_loads[cores[i]] >= 60 else 'default')
+            freq0 = f"{cpu_freqs[cores[i]]:4d} MHz" if cpu_freqs[cores[i]] is not None else ""
             markup = [
                 ("default", f"Core {cores[i]}: "), (attr1, f"{cpu_loads[cores[i]]:3d}%"), ("default", " "),
-                ("freq", f"{cpu_freqs[cores[i]]:4d} MHz")
+                ("freq", f"{freq0}")
             ]
             lines.append(markup)
     lines.append(("header", sep))
