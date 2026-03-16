@@ -27,6 +27,15 @@ def get_device_info():
             npu_version = "Permission denied - try sudo"
         except Exception:
             npu_version = ""
+    else:
+        # Fallback: check module version
+        mod_version_path = "/sys/module/rknpu/version"
+        if os.path.exists(mod_version_path):
+            try:
+                with open(mod_version_path, "r") as f:
+                    npu_version = "RKNPU driver: v" + f.read().strip()
+            except Exception:
+                npu_version = ""
     try:
         uptime = subprocess.check_output("uptime -p", shell=True).decode("utf-8").strip()
     except Exception:
@@ -107,68 +116,65 @@ def get_gpu_info():
         gpu_freq = 0
     return gpu_load, gpu_freq
 
-def get_npu_info():
-    # RV1126B: NPU is at 22000000.npu via devfreq
-    npu_load_path = "/sys/class/devfreq/22000000.npu/load"
-    npu_freq_path = "/sys/class/devfreq/22000000.npu/cur_freq"
+def _read_devfreq_load(devfreq_name, platform_name=None):
+    """Read load and frequency from a devfreq device.
 
-    if not os.path.exists(npu_load_path) or not os.path.exists(npu_freq_path):
+    On RV1126B the rknpu_ondemand / venc_ondemand governors always report
+    busy_time=100 regardless of actual utilisation.  We work around this by
+    checking the device's runtime_status first: if the device is suspended it
+    is definitely idle, so we report 0%.
+    """
+    load_path = f"/sys/class/devfreq/{devfreq_name}/load"
+    freq_path = f"/sys/class/devfreq/{devfreq_name}/cur_freq"
+
+    if not os.path.exists(load_path) or not os.path.exists(freq_path):
         return None, None
 
-    npu_load = "0%"
-    npu_freq = 0
+    # Check runtime power status — if device is suspended it is idle
+    if platform_name is None:
+        platform_name = devfreq_name
+    runtime_path = f"/sys/devices/platform/{platform_name}/power/runtime_status"
+    device_suspended = False
+    try:
+        with open(runtime_path, "r") as f:
+            status = f.read().strip()
+        if status == "suspended":
+            device_suspended = True
+    except Exception:
+        pass
+
+    # Frequency
+    dev_freq = 0
+    try:
+        with open(freq_path, "r") as f:
+            freq_str = f.read().strip()
+        dev_freq = int(freq_str) // 1000000
+    except Exception:
+        dev_freq = 0
+
+    if device_suspended:
+        return "0%", dev_freq
 
     # Parse devfreq load format: "VALUE@FREQHz"
+    dev_load = "0%"
     try:
-        with open(npu_load_path, "r") as f:
+        with open(load_path, "r") as f:
             data = f.read().strip()
         if '@' in data:
             load_part = data.split('@')[0]
-            npu_load = f"{load_part}%"
+            dev_load = f"{load_part}%"
         else:
-            npu_load = f"{data}%"
+            dev_load = f"{data}%"
     except Exception:
-        npu_load = "0%"
+        dev_load = "0%"
 
-    try:
-        with open(npu_freq_path, "r") as f:
-            freq_str = f.read().strip()
-        npu_freq = int(freq_str) // 1000000
-    except Exception:
-        npu_freq = 0
+    return dev_load, dev_freq
 
-    return npu_load, npu_freq
+def get_npu_info():
+    return _read_devfreq_load("22000000.npu")
 
 def get_venc_info():
-    """Get video encoder (VENC) load and frequency for RV1126B."""
-    venc_load_path = "/sys/class/devfreq/21f40000.rkvenc/load"
-    venc_freq_path = "/sys/class/devfreq/21f40000.rkvenc/cur_freq"
-
-    if not os.path.exists(venc_load_path) or not os.path.exists(venc_freq_path):
-        return None, None
-
-    venc_load = "0%"
-    venc_freq = 0
-
-    try:
-        with open(venc_load_path, "r") as f:
-            data = f.read().strip()
-        if '@' in data:
-            load_part = data.split('@')[0]
-            venc_load = f"{load_part}%"
-        else:
-            venc_load = f"{data}%"
-    except Exception:
-        venc_load = "0%"
-
-    try:
-        with open(venc_freq_path, "r") as f:
-            freq_str = f.read().strip()
-        venc_freq = int(freq_str) // 1000000
-    except Exception:
-        venc_freq = 0
-
-    return venc_load, venc_freq
+    return _read_devfreq_load("21f40000.rkvenc")
 
 def get_rga_info():
     rga_load_debug = "/sys/kernel/debug/rkrga/load"
