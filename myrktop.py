@@ -108,141 +108,84 @@ def get_gpu_info():
     return gpu_load, gpu_freq
 
 def get_npu_info():
-    # Try debug paths first (most accurate)
-    npu_load_debug = "/sys/kernel/debug/rknpu/load"
-    npu_freq_debug = "/sys/kernel/debug/rknpu/freq"
-    
-    # Fallback to devfreq paths
-    npu_load_devfreq = "/sys/devices/platform/27700000.npu/devfreq/27700000.npu/load"
-    npu_freq_devfreq = "/sys/devices/platform/27700000.npu/devfreq/27700000.npu/cur_freq"
-    
-    # Legacy fallback
-    npu_freq_legacy = "/sys/class/devfreq/fdab0000.npu/cur_freq"
-    
+    # RV1126B: NPU is at 22000000.npu via devfreq
+    npu_load_path = "/sys/class/devfreq/22000000.npu/load"
+    npu_freq_path = "/sys/class/devfreq/22000000.npu/cur_freq"
+
+    if not os.path.exists(npu_load_path) or not os.path.exists(npu_freq_path):
+        return None, None
+
     npu_load = "0%"
     npu_freq = 0
-    
-    # Try debug load first (use sg debugfs if needed)
+
+    # Parse devfreq load format: "VALUE@FREQHz"
     try:
-        with open(npu_load_debug, "r") as f:
+        with open(npu_load_path, "r") as f:
             data = f.read().strip()
-        # Parse format: "NPU load:  Core0:  0%, Core1:  0%,"
-        percents = re.findall(r'Core\d+:\s*(\d+)%', data)
-        if percents:
-            npu_load = " ".join([p + "%" for p in percents])
+        if '@' in data:
+            load_part = data.split('@')[0]
+            npu_load = f"{load_part}%"
         else:
-            npu_load = "0%"
-    except (FileNotFoundError, PermissionError):
-        # Try with sg debugfs if permission denied
-        try:
-            import subprocess
-            result = subprocess.check_output(['sg', 'debugfs', '-c', f'cat {npu_load_debug}'], 
-                                           stderr=subprocess.DEVNULL).decode('utf-8').strip()
-            percents = re.findall(r'Core\d+:\s*(\d+)%', result)
-            if percents:
-                npu_load = " ".join([p + "%" for p in percents])
-        except:
-            # Try devfreq load
-            try:
-                with open(npu_load_devfreq, "r") as f:
-                    data = f.read().strip()
-                # Parse devfreq format: "load@frequency"
-                if '@' in data:
-                    load_part = data.split('@')[0]
-                    npu_load = f"{load_part}%"
-            except Exception:
-                npu_load = "0%"
+            npu_load = f"{data}%"
     except Exception:
         npu_load = "0%"
-    
-    # Try debug frequency first
+
     try:
-        with open(npu_freq_debug, "r") as f:
-            data = f.read().strip()
-        # Parse debug freq format (usually just the frequency)
-        npu_freq = int(data) // 1000000 if data.isdigit() else 0
-    except (FileNotFoundError, PermissionError):
-        # Try with sg debugfs if permission denied
-        try:
-            import subprocess
-            result = subprocess.check_output(['sg', 'debugfs', '-c', f'cat {npu_freq_debug}'], 
-                                           stderr=subprocess.DEVNULL).decode('utf-8').strip()
-            npu_freq = int(result) // 1000000 if result.isdigit() else 0
-        except:
-            # Try devfreq frequency
-            for freq_path in [npu_freq_devfreq, npu_freq_legacy]:
-                try:
-                    with open(freq_path, "r") as f:
-                        freq_str = f.read().strip()
-                    npu_freq = int(freq_str) // 1000000
-                    break
-                except Exception:
-                    continue
+        with open(npu_freq_path, "r") as f:
+            freq_str = f.read().strip()
+        npu_freq = int(freq_str) // 1000000
     except Exception:
-        pass
-    
-    # If we got no data, return None to hide the section
-    if npu_load == "0%" and npu_freq == 0:
-        return None, None
-    
+        npu_freq = 0
+
     return npu_load, npu_freq
 
+def get_venc_info():
+    """Get video encoder (VENC) load and frequency for RV1126B."""
+    venc_load_path = "/sys/class/devfreq/21f40000.rkvenc/load"
+    venc_freq_path = "/sys/class/devfreq/21f40000.rkvenc/cur_freq"
 
+    if not os.path.exists(venc_load_path) or not os.path.exists(venc_freq_path):
+        return None, None
 
+    venc_load = "0%"
+    venc_freq = 0
 
+    try:
+        with open(venc_load_path, "r") as f:
+            data = f.read().strip()
+        if '@' in data:
+            load_part = data.split('@')[0]
+            venc_load = f"{load_part}%"
+        else:
+            venc_load = f"{data}%"
+    except Exception:
+        venc_load = "0%"
 
+    try:
+        with open(venc_freq_path, "r") as f:
+            freq_str = f.read().strip()
+        venc_freq = int(freq_str) // 1000000
+    except Exception:
+        venc_freq = 0
 
+    return venc_load, venc_freq
 
 def get_rga_info():
     rga_load_debug = "/sys/kernel/debug/rkrga/load"
-    
+
     try:
         with open(rga_load_debug, "r") as f:
             data = f.read()
-        # Parse format: "scheduler[0]: rga2\n\t load = 0%\n---"
         rga_values = re.findall(r'load = (\d+)%', data)
         if rga_values:
-            # Take up to 3 values and format them
             rga_values = " ".join([v + "%" for v in rga_values[:3]])
         else:
             rga_values = "0%"
         return rga_values
     except (FileNotFoundError, PermissionError):
-        # Try with sg debugfs if permission denied
-        try:
-            import subprocess
-            result = subprocess.check_output(['sg', 'debugfs', '-c', f'cat {rga_load_debug}'], 
-                                           stderr=subprocess.DEVNULL).decode('utf-8')
-            rga_values = re.findall(r'load = (\d+)%', result)
-            if rga_values:
-                rga_values = " ".join([v + "%" for v in rga_values[:3]])
-            else:
-                rga_values = "0%"
-            return rga_values
-        except:
-            return None
-    except Exception:
-        return None
-
-
-    except (FileNotFoundError, PermissionError):
-        # Permission denied - return None to hide section
         return None
     except Exception:
         return None
-
-
-    try:
-        with open(rga_load_path, "r") as f:
-            data = f.read()
-        rga_values = re.findall(r'load = (\d+)%', data)
-        if rga_values:
-            rga_values = " ".join([v + "%" for v in rga_values[:3]])
-        else:
-            rga_values = "0% 0% 0%"
-    except Exception:
-        rga_values = "0% 0% 0%"
-    return rga_values
 
 def get_ram_swap_info():
     try:
@@ -392,11 +335,10 @@ def get_fstab_disk_usage():
     return usage_lines
 
 # -------------------------------
-# New SMART/Storage Debug Code
+# SMART/Storage Info
 # -------------------------------
 
 def run_all_smartctl(dev):
-    """Run all three smartctl command variants and return a dict mapping command to output (full output)."""
     commands = [
         f"sudo smartctl -a -d auto /dev/{dev}",
         f"sudo smartctl -a -d sat /dev/{dev}",
@@ -407,13 +349,12 @@ def run_all_smartctl(dev):
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             output = (result.stdout + "\n" + result.stderr).strip()
-            results[cmd] = output  # Store full output without truncation.
+            results[cmd] = output
         except Exception as e:
             results[cmd] = f"Exception: {str(e)}"
     return results
 
 def run_smartctl(dev):
-    # Run all commands and choose one that looks usable; also return full outputs for debug.
     all_results = run_all_smartctl(dev)
     chosen_output = None
     chosen_cmd = None
@@ -443,7 +384,6 @@ def parse_ata_info(output):
     info = {}
     m = re.search(r"Device Model:\s+(.*)", output)
     info["model"] = m.group(1).strip() if m else "Unknown"
-    # Get Power_On_Hours by iterating over lines
     power_hours = "N/A"
     for line in output.splitlines():
         if "Power_On_Hours" in line:
@@ -455,7 +395,6 @@ def parse_ata_info(output):
             if power_hours != "N/A":
                 break
     info["power_hours"] = power_hours
-    # Temperature: look for a line with "Temperature_Celsius"
     temp = "N/A"
     for line in output.splitlines():
         if "emperature" in line:
@@ -467,7 +406,6 @@ def parse_ata_info(output):
             if temp != "N/A":
                 break
     info["temp"] = temp
-    # Wear_Leveling_Count
     wear = None
     for line in output.splitlines():
         if "Wear_Leveling_Count" in line:
@@ -478,7 +416,6 @@ def parse_ata_info(output):
                     break
             break
     info["wear_level"] = wear
-    # Rotation Rate
     rotation = None
     for line in output.splitlines():
         if "Rotation Rate:" in line:
@@ -497,11 +434,9 @@ def get_drive_smart_info(dev):
     debug_data = {"cmd": used_cmd if used_cmd else "None", "all": {k: v[:300] + "..." if len(v) > 300 else v for k, v in all_outputs.items()}}
     if output is None or output.startswith("Error:"):
         debug_data["raw"] = output if output else "No output"
-        return ("unknown", {"model": "Unknown", "temp": "N/A", "power_hours": "N/A", 
+        return ("unknown", {"model": "Unknown", "temp": "N/A", "power_hours": "N/A",
                              "avail_spare": "N/A", "debug": debug_data})
-    # For parsing we use the full output.
     debug_data["raw"] = output[:300] + "..." if len(output) > 300 else output
-    # If device name starts with "nvme", treat it as NVMe.
     if dev.startswith("nvme") or re.search(r"NVMe Version:", output, re.IGNORECASE):
         info = parse_nvme_info(output)
         info["debug"] = debug_data
@@ -574,22 +509,6 @@ palette = [
     ('footer', 'dark gray,bold', '')
 ]
 
-class DashboardWidget(urwid.ListBox):
-    def __init__(self):
-        self.walker = urwid.SimpleListWalker([])
-        super().__init__(self.walker)
-        self.update_content()
-    def update_content(self):
-        focus_widget, focus_pos = self.get_focus()
-        if focus_pos is None:
-            focus_pos = 0
-        new_items = []
-        for item in build_dashboard():
-            new_items.append(urwid.Text(item))
-        self.walker[:] = new_items
-        if focus_pos < len(new_items):
-            self.set_focus(focus_pos)
-
 def build_dashboard():
     lines = []
     sep = "─" * 50
@@ -650,6 +569,19 @@ def build_dashboard():
             ("default", "   "), ("freq", f"{npu_freq:4d} MHz")
         ]
         lines.append(npu_markup)
+        lines.append(("header", sep))
+    venc_load, venc_freq = get_venc_info()
+    if venc_load is not None and venc_freq is not None:
+        try:
+            venc_numeric = int(re.search(r'(\d+)%', venc_load).group(1))
+        except Exception:
+            venc_numeric = 0
+        venc_attr = 'temp_red' if venc_numeric >= 80 else ('temp_yellow' if venc_numeric >= 60 else 'default')
+        venc_markup = [
+            ("title", "🎬 VENC Load: "), (venc_attr, f"{venc_load}"),
+            ("default", "   "), ("freq", f"{venc_freq:4d} MHz")
+        ]
+        lines.append(venc_markup)
         lines.append(("header", sep))
     rga_info = get_rga_info()
     if rga_info is not None:
