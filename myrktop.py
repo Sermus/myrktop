@@ -108,32 +108,130 @@ def get_gpu_info():
     return gpu_load, gpu_freq
 
 def get_npu_info():
-    npu_load_path = "/sys/kernel/debug/rknpu/load"
-    npu_freq_path = "/sys/class/devfreq/fdab0000.npu/cur_freq"
-    if not os.path.exists(npu_load_path) or not os.path.exists(npu_freq_path):
-        return None, None
+    # Try debug paths first (most accurate)
+    npu_load_debug = "/sys/kernel/debug/rknpu/load"
+    npu_freq_debug = "/sys/kernel/debug/rknpu/freq"
+    
+    # Fallback to devfreq paths
+    npu_load_devfreq = "/sys/devices/platform/27700000.npu/devfreq/27700000.npu/load"
+    npu_freq_devfreq = "/sys/devices/platform/27700000.npu/devfreq/27700000.npu/cur_freq"
+    
+    # Legacy fallback
+    npu_freq_legacy = "/sys/class/devfreq/fdab0000.npu/cur_freq"
+    
+    npu_load = "0%"
+    npu_freq = 0
+    
+    # Try debug load first (use sg debugfs if needed)
     try:
-        with open(npu_load_path, "r") as f:
-            data = f.read()
-        percents = re.findall(r'(\d+)%', data)
+        with open(npu_load_debug, "r") as f:
+            data = f.read().strip()
+        # Parse format: "NPU load:  Core0:  0%, Core1:  0%,"
+        percents = re.findall(r'Core\d+:\s*(\d+)%', data)
         if percents:
             npu_load = " ".join([p + "%" for p in percents])
         else:
-            npu_load = "0% 0% 0%"
+            npu_load = "0%"
+    except (FileNotFoundError, PermissionError):
+        # Try with sg debugfs if permission denied
+        try:
+            import subprocess
+            result = subprocess.check_output(['sg', 'debugfs', '-c', f'cat {npu_load_debug}'], 
+                                           stderr=subprocess.DEVNULL).decode('utf-8').strip()
+            percents = re.findall(r'Core\d+:\s*(\d+)%', result)
+            if percents:
+                npu_load = " ".join([p + "%" for p in percents])
+        except:
+            # Try devfreq load
+            try:
+                with open(npu_load_devfreq, "r") as f:
+                    data = f.read().strip()
+                # Parse devfreq format: "load@frequency"
+                if '@' in data:
+                    load_part = data.split('@')[0]
+                    npu_load = f"{load_part}%"
+            except Exception:
+                npu_load = "0%"
     except Exception:
-        npu_load = "0% 0% 0%"
+        npu_load = "0%"
+    
+    # Try debug frequency first
     try:
-        with open(npu_freq_path, "r") as f:
-            npu_freq_str = f.read().strip()
-        npu_freq = int(npu_freq_str) // 1000000
+        with open(npu_freq_debug, "r") as f:
+            data = f.read().strip()
+        # Parse debug freq format (usually just the frequency)
+        npu_freq = int(data) // 1000000 if data.isdigit() else 0
+    except (FileNotFoundError, PermissionError):
+        # Try with sg debugfs if permission denied
+        try:
+            import subprocess
+            result = subprocess.check_output(['sg', 'debugfs', '-c', f'cat {npu_freq_debug}'], 
+                                           stderr=subprocess.DEVNULL).decode('utf-8').strip()
+            npu_freq = int(result) // 1000000 if result.isdigit() else 0
+        except:
+            # Try devfreq frequency
+            for freq_path in [npu_freq_devfreq, npu_freq_legacy]:
+                try:
+                    with open(freq_path, "r") as f:
+                        freq_str = f.read().strip()
+                    npu_freq = int(freq_str) // 1000000
+                    break
+                except Exception:
+                    continue
     except Exception:
-        npu_freq = 0
+        pass
+    
+    # If we got no data, return None to hide the section
+    if npu_load == "0%" and npu_freq == 0:
+        return None, None
+    
     return npu_load, npu_freq
 
+
+
+
+
+
+
 def get_rga_info():
-    rga_load_path = "/sys/kernel/debug/rkrga/load"
-    if not os.path.exists(rga_load_path):
+    rga_load_debug = "/sys/kernel/debug/rkrga/load"
+    
+    try:
+        with open(rga_load_debug, "r") as f:
+            data = f.read()
+        # Parse format: "scheduler[0]: rga2\n\t load = 0%\n---"
+        rga_values = re.findall(r'load = (\d+)%', data)
+        if rga_values:
+            # Take up to 3 values and format them
+            rga_values = " ".join([v + "%" for v in rga_values[:3]])
+        else:
+            rga_values = "0%"
+        return rga_values
+    except (FileNotFoundError, PermissionError):
+        # Try with sg debugfs if permission denied
+        try:
+            import subprocess
+            result = subprocess.check_output(['sg', 'debugfs', '-c', f'cat {rga_load_debug}'], 
+                                           stderr=subprocess.DEVNULL).decode('utf-8')
+            rga_values = re.findall(r'load = (\d+)%', result)
+            if rga_values:
+                rga_values = " ".join([v + "%" for v in rga_values[:3]])
+            else:
+                rga_values = "0%"
+            return rga_values
+        except:
+            return None
+    except Exception:
         return None
+
+
+    except (FileNotFoundError, PermissionError):
+        # Permission denied - return None to hide section
+        return None
+    except Exception:
+        return None
+
+
     try:
         with open(rga_load_path, "r") as f:
             data = f.read()
