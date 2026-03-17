@@ -1,6 +1,8 @@
-# 🖥️ myrktop - Orange Pi 5 (RK3588) System Monitor COLORED BRANCH
+# 🖥️ myrktop - BananaPi M5 Pro (RK3576) System Monitor
 
-🔥 **myrktop** is a lightweight system monitor for **Orange Pi 5 (RK3588)**, providing real-time information about **CPU, GPU, NPU, RAM, RGA, and system temperatures**.
+🔥 **myrktop** is a lightweight system monitor for **BananaPi M5 Pro (RK3576)**, providing real-time information about **CPU, GPU, NPU, RAM, RGA, and system temperatures**.
+
+> This is a fork adapted for **BananaPi M5 Pro (RK3576)**. The original project targets Orange Pi 5 (RK3588): [mhl221135/myrktop](https://github.com/mhl221135/myrktop).
 
 ## **📥 Installation Instructions**
 ### **1️⃣ Install Required Dependencies**
@@ -12,8 +14,8 @@ sudo apt update && sudo apt install -y python3 python3-pip lm-sensors smartmonto
 ### **2️⃣ Download and Install myrktop**
 Run the following command to download and install the script:
 ```bash
-wget -O ~/myrktop.py https://raw.githubusercontent.com/mhl221135/myrktop/refs/heads/main/myrktop.py
-wget -O /usr/local/bin/myrktop https://raw.githubusercontent.com/mhl221135/myrktop/refs/heads/main/myrktop
+wget -O ~/myrktop.py https://raw.githubusercontent.com/Sermus/myrktop/refs/heads/bananapim5pro/myrktop.py
+wget -O /usr/local/bin/myrktop https://raw.githubusercontent.com/Sermus/myrktop/refs/heads/bananapim5pro/myrktop
 ```
 Then, make the script executable:
 ```bash
@@ -36,63 +38,53 @@ myrktop
 - **System temperature readings**
 - **Network interfaces: Down/Up readings**
 - **Storage Usage (/etc/fstab)**
-- **NVMe & ATA Storage Info:**
-
+- **NVMe & ATA Storage Info**
 
 ---
 
 ## **📌 Example Output**
-```bash
+```
 ──────────────────────────────────────────────────
 🔥 System Monitor
 ──────────────────────────────────────────────────
-Device: rockchip,rk3588s-orangepi-5rockchip,rk3588
-NPU Version: RKNPU driver: v0.9.8
-System Uptime: up 17 hours, 30 minutes
-Docker Status: Running ✅
+Device: armsom,sige5rockchip,rk3576
+NPU Version: RKNPU driver: v0.9.6
+System Uptime: up 2 days, 2 hours, 46 minutes
 ──────────────────────────────────────────────────
 📊 CPU Usage & Frequency:
-Core 0:  12% 1800 MHz   Core 1:   3% 1800 MHz
-Core 2:   9% 1800 MHz   Core 3:   6% 1800 MHz
-Core 4:   3% 2352 MHz   Core 5:   4% 2352 MHz
-Core 6:  20% 2304 MHz   Core 7:  17% 2304 MHz
+Core 0:   0% 2208 MHz   Core 1:   0% 2208 MHz
+Core 2:   0% 2208 MHz   Core 3:   0% 2208 MHz
+Core 4:   0% 2304 MHz   Core 5:   0% 2304 MHz
+Core 6:   0% 2304 MHz   Core 7:   0% 2304 MHz
 ──────────────────────────────────────────────────
-🎮 GPU Load:   0%    300 MHz
+🧠 NPU Load: 0% 0%   1000 MHz
 ──────────────────────────────────────────────────
-🧠 NPU Load: 0% 0% 0%   1000 MHz
-──────────────────────────────────────────────────
-🖼️  RGA Load: 0% 0% 0%
+🖼️  RGA Load: 0% 0%
 ──────────────────────────────────────────────────
 🖥️  RAM & Swap Usage:
-RAM Used: 2.4Gi / 15Gi
-Swap Used: 5.0Mi / 7.8Gi
+RAM Used: 544Mi / 7.7Gi
+Swap Used: 9.8Mi / 4.0Gi
 ──────────────────────────────────────────────────
 🌡️  Temperatures:
-npu_thermal-virtual-0          30°C
-center_thermal-virtual-0       30°C
-bigcore1_thermal-virtual-0     31°C
-soc_thermal-virtual-0          31°C
-nvme-pci-44100                 28°C
-gpu_thermal-virtual-0          30°C
-littlecore_thermal-virtual-0   31°C
-bigcore0_thermal-virtual-0     31°C
+npu_thermal-virtual-0          49°C
+little_core_thermal-virtual-0  50°C
+soc_thermal-virtual-0          49°C
+gpu_thermal-virtual-0          50°C
+ddr_thermal-virtual-0          49°C
+bigcore_thermal-virtual-0      49°C
 ──────────────────────────────────────────────────
 🌐 Network Traffic:
-wlan0: Down 0.1 Mbps | Up 2.00 Mbps
-eth0: Down 0.91 Mbps | Up 0.06 Mbps
+wlan1: Down 0.00 Mbps | Up 0.00 Mbps
+end0: Down 0.00 Mbps | Up 0.00 Mbps
+wlan0: Down 0.00 Mbps | Up 0.00 Mbps
+end1: Down 0.00 Mbps | Up 0.00 Mbps
 ──────────────────────────────────────────────────
 💾 Storage Usage (/etc/fstab):
 Mount Point             Total     Used     Free
-/                         59G     7.2G      51G
-/media/ssdmount          938G     387G     504G
-/media/wdmount           1.8T     1.5T     233G
-/media/500hdd            458G     149G     286G
+/oem                     123M      12M     108M
+/userdata                 44G      40G     4.5G
 ──────────────────────────────────────────────────
-NVMe Devices:
-/dev/nvme0n1 - SPCC M.2 PCIe SSD | Temp: 29°C | Hours: 829 | Spare: 100%
-ATA Devices:
-/dev/sda - WDC WD20NMVW-11AV3S2 | Temp: 35°C | Hours: 17169 | 5200 rpm
-/dev/sdb - WDC WD5000LPLX-00ZNTT0 | Temp: 33°C | Hours: 28406 | 7200 rpm
+No ATA devices detected.
 ──────────────────────────────────────────────────
 Press 'q' to exit. Use arrows or mouse to scroll.
 ```
@@ -102,7 +94,7 @@ Press 'q' to exit. Use arrows or mouse to scroll.
 ## **🔧 How to Contribute**
 If you find a bug or want to improve **myrktop**, feel free to fork the repository and submit a pull request.
 
-📂 **GitHub Repository:** [https://github.com/mhl221135/myrktop](https://github.com/mhl221135/myrktop)
+📂 **GitHub Repository:** [https://github.com/Sermus/myrktop](https://github.com/Sermus/myrktop/tree/bananapim5pro)
 
 ---
 
